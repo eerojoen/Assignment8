@@ -1,13 +1,17 @@
-package com.example.assignment7;
+package com.example.assignment8;
 
 import android.content.Context;
+import android.net.Uri;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.BaseAdapter;
 import android.widget.ImageView;
 import android.widget.TextView;
+
 import com.squareup.picasso.Picasso;
+
+import java.net.URI;
 import java.util.ArrayList;
 
 public class ListAdapter extends BaseAdapter {
@@ -66,9 +70,11 @@ public class ListAdapter extends BaseAdapter {
             holder = (ViewHolder)convertView.getTag();
         }
 
-        Picasso.get().load(dataModelArrayList.get(position).getImgURL()).into(holder.iv);
-        holder.tvowner.setText("Name: "+dataModelArrayList.get(position).getOwner());
-        holder.tvlicense.setText("Country: "+dataModelArrayList.get(position).getLicense());
+        //Picasso.get().load(dataModelArrayList.get(position).getImgURL()).into(holder.iv);
+        Uri mUri = Uri.parse(dataModelArrayList.get(position).getImgURL());
+        holder.iv.setImageURI(mUri);
+        holder.tvowner.setText("Owner: "+dataModelArrayList.get(position).getOwner());
+        holder.tvlicense.setText("License: "+dataModelArrayList.get(position).getLicense());
 
         return convertView;
     }

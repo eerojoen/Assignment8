@@ -1,8 +1,14 @@
-package com.example.assignment7;
+package com.example.assignment8;
 
 import android.annotation.SuppressLint;
 import android.app.ProgressDialog;
 import android.content.Context;
+import android.content.ContextWrapper;
+import android.database.Cursor;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.net.Uri;
+import android.os.AsyncTask;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.View;
@@ -20,10 +26,20 @@ import com.android.volley.Response;
 import com.android.volley.VolleyError;
 import com.android.volley.toolbox.StringRequest;
 import com.android.volley.toolbox.Volley;
+import com.google.android.material.snackbar.Snackbar;
 
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.BufferedInputStream;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
+import java.net.URL;
 import java.util.ArrayList;
 
 public class MainActivity extends AppCompatActivity {
@@ -33,8 +49,10 @@ public class MainActivity extends AppCompatActivity {
     private ListView listView;
     private Button button;
     private EditText editText;
-    ArrayList<DataModel> dataModelArrayList =  new ArrayList<>();;
     private ListAdapter listAdapter;
+    DatabaseHelper myDb;
+    JSONObject obj;
+    private AsyncTask mMyTask;
 
     @SuppressLint("ResourceType")
     @Override
@@ -42,6 +60,7 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        myDb = new DatabaseHelper(this);
         listView = findViewById(R.id.lv);
 
         LinearLayout linearLayout = (LinearLayout) findViewById(R.id.toolbar);
@@ -77,6 +96,26 @@ public class MainActivity extends AppCompatActivity {
 
     }
 
+    private void setToListView(){
+        ArrayList<DataModel> dataModelArrayList =  new ArrayList<>();;
+        Cursor res = myDb.getAll();
+
+        if(res.getCount() == 0){
+            return;
+        }
+
+        while(res.moveToNext()){
+            DataModel playerModel = new DataModel();
+            playerModel.setOwner(res.getString(1));
+            playerModel.setLicense(res.getString(2));
+            playerModel.setImgURL(res.getString(3));
+
+            dataModelArrayList.add(playerModel);
+        }
+
+        setupListview(dataModelArrayList);
+    }
+
     private void retrieveJSON(String tag) {
 
         showSimpleProgressDialog(this, "Loading...","Fetching Json",false);
@@ -90,18 +129,14 @@ public class MainActivity extends AppCompatActivity {
 
                         try {
 
-                            JSONObject obj = new JSONObject(response);
+                            obj = new JSONObject(response);
 
+                            mMyTask = new DownloadTask()
+                                    .execute(stringToURL(
+                                            obj.getString("file").replace("\\", "")
+                                    ));
 
-                                    DataModel playerModel = new DataModel();
-
-                                    playerModel.setOwner(obj.getString("owner"));
-                                    playerModel.setLicense(obj.getString("license"));
-                                    playerModel.setImgURL(obj.getString("file").replace("\\", ""));
-
-                                    dataModelArrayList.add(playerModel);
-
-                                setupListview();
+                            setToListView();
 
                         } catch (JSONException e) {
                             e.printStackTrace();
@@ -124,7 +159,7 @@ public class MainActivity extends AppCompatActivity {
 
     }
 
-    private void setupListview(){
+    private void setupListview(ArrayList<DataModel> dataModelArrayList){
         removeSimpleProgressDialog();  //will remove progress dialog
         listAdapter = new ListAdapter(this, dataModelArrayList);
         listView.setAdapter(listAdapter);
@@ -168,6 +203,110 @@ public class MainActivity extends AppCompatActivity {
         } catch (Exception e) {
             e.printStackTrace();
         }
+    }
+
+    private class DownloadTask extends AsyncTask<URL,Void,Bitmap> {
+        // Before the tasks execution
+        protected void onPreExecute(){
+        }
+
+        // Do the task in background/non UI thread
+        protected Bitmap doInBackground(URL...urls){
+            URL url = urls[0];
+            HttpURLConnection connection = null;
+
+            try{
+                connection = (HttpURLConnection) url.openConnection();
+
+                connection.connect();
+
+                InputStream inputStream = connection.getInputStream();
+
+                BufferedInputStream bufferedInputStream = new BufferedInputStream(inputStream);
+
+                Bitmap bmp = BitmapFactory.decodeStream(bufferedInputStream);
+
+                // Return the downloaded bitmap
+                return bmp;
+
+            }catch(IOException e){
+                e.printStackTrace();
+            }finally{
+                // Disconnect the http url connection
+                connection.disconnect();
+            }
+            return null;
+        }
+
+        // When all async task done
+        protected void onPostExecute(Bitmap result){
+
+            if(result!=null) {
+                // Save bitmap to internal storage
+                Uri imageInternalUri = saveImageToInternalStorage(result);
+                try{
+                    myDb.insertData(obj.getString("owner"), obj.getString("license"), imageInternalUri.toString());
+                } catch (Exception e){
+                    e.printStackTrace();
+                }
+            }
+        }
+    }
+
+    // Custom method to convert string to url
+    protected URL stringToURL(String urlString){
+        try{
+            URL url = new URL(urlString);
+            return url;
+        }catch(MalformedURLException e){
+            e.printStackTrace();
+        }
+        return null;
+    }
+
+    // Custom method to save a bitmap into internal storage
+    protected Uri saveImageToInternalStorage(Bitmap bitmap){
+        // Initialize ContextWrapper
+        ContextWrapper wrapper = new ContextWrapper(getApplicationContext());
+
+
+        // Initializing a new file
+        // The bellow line return a directory in internal storage
+        File file = wrapper.getDir("Images",MODE_PRIVATE);
+
+        if (!file.exists()) {
+            file.mkdirs();
+        }
+
+        // Create a file to save the image
+        file = new File(file, System.currentTimeMillis()+".jpg");
+
+        try{
+            // Initialize a new OutputStream
+            OutputStream stream = null;
+
+            // If the output file exists, it can be replaced or appended to it
+            stream = new FileOutputStream(file);
+
+            // Compress the bitmap
+            bitmap.compress(Bitmap.CompressFormat.JPEG,100,stream);
+
+            // Flushes the stream
+            stream.flush();
+
+            // Closes the stream
+            stream.close();
+
+        }catch (IOException e) // Catch the exception
+        {
+            e.printStackTrace();
+        }
+
+        // Parse the gallery image url to uri
+        Uri savedImageURI = Uri.parse(file.getAbsolutePath());
+
+        // Return the saved image Uri
+        return savedImageURI;
     }
 
 }

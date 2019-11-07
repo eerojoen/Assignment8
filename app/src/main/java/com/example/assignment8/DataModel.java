@@ -1,4 +1,4 @@
-package com.example.assignment7;
+package com.example.assignment8;
 
 public class DataModel {
     private String owner, license, imgURL;
